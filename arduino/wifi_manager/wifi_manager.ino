@@ -17,7 +17,7 @@ const int httpsPort = 443; // HTTPS port number
 
 WiFiClientSecure client; // Create a WiFiClientSecure object
 
-String GAS_ID = "AKfycbwbZK3TCSS1RZ60t73phWxYoqQ4R8pBrhoaLiJSoLJFheh6PbHbjk5WtlILRQfXafgh"; // Google Apps Script ID
+String GAS_ID = "__________________"; // Google Apps Script ID
 
 void setupWiFiManager() {
   WiFi.mode(WIFI_STA); // Set WiFi mode to station
