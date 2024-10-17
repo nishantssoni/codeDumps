@@ -2,6 +2,7 @@ import os
 import yt_dlp
 import subprocess
 import re
+import shlex
 
 def sanitize_filename(filename):
     return re.sub(r'[\\/*?:"<>|]', "", filename)
@@ -17,14 +18,16 @@ def get_format_info(format_dict):
         }
     return None
 
-def download_video(url, output_path="downloads"):
+def download_video(url, output_path="downloads/single_videos",quality = 0):
     output_path = os.path.abspath(output_path)
     
     ydl_opts = {
         'format': 'bestvideo+bestaudio/best',
         'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
         'progress_hooks': [progress_hook],
-        'verbose': True
+        'verbose': False,
+        'quiet': True, 
+        'no_warnings': True
     }
 
     try:
@@ -52,11 +55,15 @@ def download_video(url, output_path="downloads"):
                 print("No suitable video formats found. The video might be restricted or unavailable.")
                 return
 
-            print("\nAvailable video qualities:")
-            for i, (height, f) in enumerate(video_formats):
-                print(f"{i + 1}. {height}p (Format ID: {f['format_id']}, Codec: {f['vcodec']})")
 
-            video_choice = int(input("\nEnter the number of the video quality you want to download: ")) - 1
+
+            if quality == 2:
+                video_choice = 1
+            else:
+                print("\nAvailable video qualities:")
+                for i, (height, f) in enumerate(video_formats):
+                    print(f"{i + 1}. {height}p (Format ID: {f['format_id']}, Codec: {f['vcodec']})")
+                video_choice = int(input("\nEnter the number of the video quality you want to download: ")) - 1
 
             if video_choice < 0 or video_choice >= len(video_formats):
                 print("Invalid choice. Please run the script again and select a valid option.")
@@ -75,7 +82,7 @@ def download_video(url, output_path="downloads"):
             output_filename = os.path.join(output_path, f"{safe_title}.mp4")
 
             os.makedirs(output_path, exist_ok=True)
-
+            # clear_terminal()
             print(f"\nDownloading video: {safe_title} ({video_formats[video_choice][0]}p)")
             ydl_opts['format'] = chosen_video_format
             ydl_opts['outtmpl'] = video_filename
@@ -87,7 +94,7 @@ def download_video(url, output_path="downloads"):
             ydl_opts['outtmpl'] = audio_filename
             with yt_dlp.YoutubeDL(ydl_opts) as ydl_audio:
                 ydl_audio.download([url])
-
+            # clear_terminal()
             print("\nMerging video and audio")
             ffmpeg_cmd = ['ffmpeg', '-i', video_filename, '-i', audio_filename, '-c', 'copy', output_filename]
             subprocess.run(ffmpeg_cmd, check=True, stderr=subprocess.PIPE)
@@ -95,7 +102,7 @@ def download_video(url, output_path="downloads"):
             print("\nCleaning up temporary files")
             os.remove(video_filename)
             os.remove(audio_filename)
-
+            # clear_terminal()
         print("\nDownload and merge complete!")
 
     except subprocess.CalledProcessError as e:
@@ -103,6 +110,65 @@ def download_video(url, output_path="downloads"):
     except Exception as e:
         print(f"An error occurred: {str(e)}")
         print("Please try again or check if the video is available.")
+
+
+
+def download_audio(url, output_path="downloads/single_audios"):
+    output_path = os.path.abspath(output_path)
+
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
+        'progress_hooks': [progress_hook],
+        'verbose': False,
+        'quiet': True,
+        'no_warnings': True,
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'm4a',
+        }],
+        'postprocessor_args': ['-b:a', '320k'],
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+
+            print("\nAudio download process completed.")
+
+            # List files in the directory
+            m4a_files = [f for f in os.listdir(output_path) if f.endswith('.m4a')]
+
+            if not m4a_files:
+                print("No .m4a files found in the output directory.")
+                return
+
+            # Use the first .m4a file found
+            audio_filename = os.path.join(output_path, m4a_files[0])
+
+            # Generate output filename
+            output_filename = os.path.splitext(audio_filename)[0] + '_.mp3'
+
+            # Escape filenames for shell
+            audio_filename_escaped = shlex.quote(audio_filename)
+            output_filename_escaped = shlex.quote(output_filename)
+
+            ffmpeg_cmd = f'ffmpeg -i {audio_filename_escaped} -c:a libmp3lame -b:a 320k {output_filename_escaped}'
+
+            try:
+                subprocess.run(ffmpeg_cmd, shell=True, check=True, stderr=subprocess.PIPE)
+                print("Conversion successful!")
+                
+                os.remove(audio_filename)
+            except subprocess.CalledProcessError as e:
+                print(f"An error occurred during conversion: {e.stderr.decode()}")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+        print("Please try again or check if the video is available.")
+
+
+
 
 def progress_hook(d):
     if d['status'] == 'downloading':
@@ -113,6 +179,100 @@ def progress_hook(d):
     elif d['status'] == 'finished':
         print("\nDownload finished. Processing...")
 
+
+# Function to extract video links from a playlist
+def get_video_links_from_playlist(playlist_url):
+    # Options to retrieve playlist information
+    ydl_opts = {
+        'extract_flat': True,  # Extract video URLs without downloading
+        'skip_download': True,  # Skip downloading videos
+        'quiet': True, 
+        'no_warnings': True
+    }
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        playlist_info = ydl.extract_info(playlist_url, download=False)
+        
+        # Extract video URLs from playlist entries
+        video_urls = []
+        if 'entries' in playlist_info:
+            for entry in playlist_info['entries']:
+                video_urls.append(entry['url'])
+    
+    return video_urls
+
+
+def get_playlist_info(playlist_url):
+    # Options to retrieve playlist information
+    ydl_opts = {
+        'extract_flat': True,   # Extract video URLs without downloading
+        'skip_download': True,  # Skip downloading videos
+        'quiet': True,          # Suppress terminal output
+        'no_warnings': True     # Suppress warnings
+    }
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        playlist_info = ydl.extract_info(playlist_url, download=False)
+        
+        # Extract playlist name (title)
+        playlist_name = playlist_info.get('title', 'Unknown_Playlist')
+        
+        # Extract video URLs from playlist entries
+        video_urls = []
+        if 'entries' in playlist_info:
+            for entry in playlist_info['entries']:
+                video_urls.append(entry['url'])
+    
+    return playlist_name, video_urls
+
+
+def clear_terminal():
+    # For Windows
+    if os.name == 'nt':
+        os.system('cls')
+    # For macOS and Linux (posix systems)
+    else:
+        os.system('clear')
+
+
 if __name__ == "__main__": 
-    video_url = input("Enter the YouTube video URL: ") 
-    download_video(video_url)
+    choice = int(input("1.single video download\n2.whole playlist video download\n3.single audio download\n4.whole playlist audio download\nyourchoice :: "))
+    clear_terminal()
+    if choice == 1:
+        video_url = input("Enter the YouTube video URL: ")
+        download_video(video_url)
+        clear_terminal()
+        print("video downloaded!!")
+    elif choice == 2:
+        quality = int(input("quality of videos\n1.manual\n2.best\nchoice :: "))
+        playlist_url = input("Enter the YouTube playlist URL: ")
+
+        playlist_name, urls = get_playlist_info(playlist_url)
+        output_path = "downloads/" + playlist_name
+        clear_terminal()
+        counter = 1
+        
+        for i in urls:
+            print(f'{playlist_name} ({counter} / {len(urls)})')
+            if quality == 2:
+                download_video(i,output_path=output_path, quality=2)
+            else:
+                download_video(i)
+            clear_terminal()
+            counter += 1
+    elif choice == 3:
+        video_url = input("Enter the YouTube video URL: ")
+        download_audio(video_url)
+    elif choice == 4:
+        playlist_url = input("Enter the YouTube playlist URL: ")
+
+        playlist_name, urls = get_playlist_info(playlist_url)
+        output_path = "downloads/" + playlist_name
+        clear_terminal()
+        counter = 1
+        
+        for i in urls:
+            print(f'{playlist_name} ({counter} / {len(urls)})')
+            download_audio(i, output_path=output_path)
+            clear_terminal()
+            counter += 1
