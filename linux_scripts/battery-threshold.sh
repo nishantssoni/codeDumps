@@ -7,6 +7,18 @@ show_help() {
     echo "Examples:"
     echo "  $0 -60   # Set charge threshold to 60%"
     echo "  $0 -80   # Set charge threshold to 80%"
+        # Check and display the power status
+    AC_STATUS_FILE="/sys/class/power_supply/ACAD/online"
+    if [ -f "$AC_STATUS_FILE" ]; then
+        AC_STATUS=$(cat "$AC_STATUS_FILE")
+        if [ "$AC_STATUS" -eq 1 ]; then
+            echo "Power Status: Connected to AC adapter (1)"
+        else
+            echo "Power Status: Running on battery (0)"
+        fi
+    else
+        echo "Power Status: Unable to determine (file not found: $AC_STATUS_FILE)"
+    fi
     exit 1
 }
 
