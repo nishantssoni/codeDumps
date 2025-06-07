@@ -2,3 +2,4 @@
 demo_data.csv
 .vscode
 __pycache__
+.env
