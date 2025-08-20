@@ -7,169 +7,6 @@ import shlex
 def sanitize_filename(filename):
     return re.sub(r'[\\/*?:"<>|]', "", filename)
 
-def get_format_info(format_dict):
-    if isinstance(format_dict, dict):
-        return {
-            'format_id': format_dict.get('format_id', 'unknown'),
-            'ext': format_dict.get('ext', 'mp4'),
-            'vcodec': format_dict.get('vcodec', 'unknown'),
-            'acodec': format_dict.get('acodec', 'unknown'),
-            'height': format_dict.get('height', 0)
-        }
-    return None
-
-def download_video(url, output_path="downloads/single_videos",quality = 0):
-    output_path = os.path.abspath(output_path)
-    
-    ydl_opts = {
-        'format': 'bestvideo+bestaudio/best',
-        'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
-        'progress_hooks': [progress_hook],
-        'verbose': False,
-        'quiet': True, 
-        'no_warnings': True
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            
-            if 'formats' not in info:
-                print("No available formats found. The video might be restricted or unavailable.")
-                return
-
-            video_formats = []
-            audio_formats = []
-
-            for f in info['formats']:
-                format_info = get_format_info(f)
-                if format_info:
-                    if format_info['vcodec'] != 'none' and format_info['acodec'] == 'none':
-                        video_formats.append((format_info['height'], format_info))
-                    elif format_info['vcodec'] == 'none' and format_info['acodec'] != 'none':
-                        audio_formats.append(format_info)
-
-            video_formats.sort(key=lambda x: x[0], reverse=True)
-            
-            if not video_formats:
-                print("No suitable video formats found. The video might be restricted or unavailable.")
-                return
-
-
-
-            if quality == 2:
-                video_choice = 1
-            else:
-                print("\nAvailable video qualities:")
-                for i, (height, f) in enumerate(video_formats):
-                    print(f"{i + 1}. {height}p (Format ID: {f['format_id']}, Codec: {f['vcodec']})")
-                video_choice = int(input("\nEnter the number of the video quality you want to download: ")) - 1
-
-            if video_choice < 0 or video_choice >= len(video_formats):
-                print("Invalid choice. Please run the script again and select a valid option.")
-                return
-
-            chosen_video_format = video_formats[video_choice][1]['format_id']
-            
-            if not audio_formats:
-                print("No suitable audio formats found. The video might be restricted or unavailable.")
-                return
-            audio_format = audio_formats[0]['format_id']
-
-            safe_title = sanitize_filename(info['title'])
-            video_filename = os.path.join(output_path, f"{safe_title}_video.{video_formats[video_choice][1]['ext']}")
-            audio_filename = os.path.join(output_path, f"{safe_title}_audio.m4a")
-            output_filename = os.path.join(output_path, f"{safe_title}.mp4")
-
-            os.makedirs(output_path, exist_ok=True)
-            # clear_terminal()
-            print(f"\nDownloading video: {safe_title} ({video_formats[video_choice][0]}p)")
-            ydl_opts['format'] = chosen_video_format
-            ydl_opts['outtmpl'] = video_filename
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl_video:
-                ydl_video.download([url])
-
-            print("\nDownloading audio")
-            ydl_opts['format'] = audio_format
-            ydl_opts['outtmpl'] = audio_filename
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl_audio:
-                ydl_audio.download([url])
-            # clear_terminal()
-            print("\nMerging video and audio")
-            ffmpeg_cmd = ['ffmpeg', '-i', video_filename, '-i', audio_filename, '-c', 'copy', output_filename]
-            subprocess.run(ffmpeg_cmd, check=True, stderr=subprocess.PIPE)
-
-            print("\nCleaning up temporary files")
-            os.remove(video_filename)
-            os.remove(audio_filename)
-            # clear_terminal()
-        print("\nDownload and merge complete!")
-
-    except subprocess.CalledProcessError as e:
-        print(f"Error during FFmpeg processing: {e.stderr.decode()}")
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
-        print("Please try again or check if the video is available.")
-
-
-
-def download_audio(url, output_path="downloads/single_audios"):
-    output_path = os.path.abspath(output_path)
-
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
-        'progress_hooks': [progress_hook],
-        'verbose': False,
-        'quiet': True,
-        'no_warnings': True,
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'm4a',
-        }],
-        'postprocessor_args': ['-b:a', '320k'],
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-
-            print("\nAudio download process completed.")
-
-            # List files in the directory
-            m4a_files = [f for f in os.listdir(output_path) if f.endswith('.m4a')]
-
-            if not m4a_files:
-                print("No .m4a files found in the output directory.")
-                return
-
-            # Use the first .m4a file found
-            audio_filename = os.path.join(output_path, m4a_files[0])
-
-            # Generate output filename
-            output_filename = os.path.splitext(audio_filename)[0] + '_.mp3'
-
-            # Escape filenames for shell
-            audio_filename_escaped = shlex.quote(audio_filename)
-            output_filename_escaped = shlex.quote(output_filename)
-
-            ffmpeg_cmd = f'ffmpeg -i {audio_filename_escaped} -c:a libmp3lame -b:a 320k {output_filename_escaped}'
-
-            try:
-                subprocess.run(ffmpeg_cmd, shell=True, check=True, stderr=subprocess.PIPE)
-                print("Conversion successful!")
-                
-                os.remove(audio_filename)
-            except subprocess.CalledProcessError as e:
-                print(f"An error occurred during conversion: {e.stderr.decode()}")
-
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
-        print("Please try again or check if the video is available.")
-
-
-
-
 def progress_hook(d):
     if d['status'] == 'downloading':
         percent = d['_percent_str']
@@ -179,100 +16,303 @@ def progress_hook(d):
     elif d['status'] == 'finished':
         print("\nDownload finished. Processing...")
 
+def download_video(url, output_path="downloads/single_videos", quality=0):
+    """
+    Download video using yt-dlp's built-in format selection and merging
+    """
+    output_path = os.path.abspath(output_path)
+    os.makedirs(output_path, exist_ok=True)
+    
+    try:
+        # First, get video info to show available qualities
+        with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+        if not info:
+            print("Could not retrieve video information.")
+            return
+            
+        print(f"\nVideo Title: {info.get('title', 'Unknown')}")
+        
+        # Format selection based on quality choice
+        if quality == 2:  # Best quality automatically
+            format_selector = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
+        else:  # Manual quality selection
+            # Get available video formats
+            formats = info.get('formats', [])
+            video_formats = []
+            
+            for f in formats:
+                if (f.get('vcodec') != 'none' and 
+                    f.get('height') and 
+                    f.get('height') > 0):
+                    video_formats.append({
+                        'height': f.get('height'),
+                        'format_id': f.get('format_id'),
+                        'vcodec': f.get('vcodec', 'unknown'),
+                        'fps': f.get('fps', 'unknown')
+                    })
+            
+            # Remove duplicates and sort by height
+            seen_heights = set()
+            unique_formats = []
+            for fmt in sorted(video_formats, key=lambda x: x['height'], reverse=True):
+                if fmt['height'] not in seen_heights:
+                    unique_formats.append(fmt)
+                    seen_heights.add(fmt['height'])
+            
+            if not unique_formats:
+                print("No suitable video formats found.")
+                return
+                
+            print("\nAvailable video qualities:")
+            for i, fmt in enumerate(unique_formats):
+                print(f"{i + 1}. {fmt['height']}p (Codec: {fmt['vcodec']}, FPS: {fmt['fps']})")
+            
+            while True:
+                try:
+                    choice = int(input("\nEnter the number of the video quality you want to download: ")) - 1
+                    if 0 <= choice < len(unique_formats):
+                        selected_height = unique_formats[choice]['height']
+                        # Use height-based selection with automatic audio merging
+                        format_selector = f'bestvideo[height<={selected_height}]+bestaudio/best[height<={selected_height}]'
+                        break
+                    else:
+                        print("Invalid choice. Please try again.")
+                except ValueError:
+                    print("Please enter a valid number.")
+        
+        # Download with automatic merging
+        ydl_opts = {
+            'format': format_selector,
+            'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
+            'progress_hooks': [progress_hook],
+            'merge_output_format': 'mp4',  # Ensure output is mp4
+            'writesubtitles': False,
+            'writeautomaticsub': False,
+            'verbose': False,
+            'quiet': True,
+            'no_warnings': True
+        }
+        
+        print(f"\nDownloading and merging video...")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+            
+        print("\nDownload and merge complete!")
+        
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+        print("Please try again or check if the video is available.")
 
-# Function to extract video links from a playlist
-def get_video_links_from_playlist(playlist_url):
-    # Options to retrieve playlist information
+def download_audio(url, output_path="downloads/single_audios"):
+    """
+    Download audio using yt-dlp's built-in audio extraction
+    """
+    output_path = os.path.abspath(output_path)
+    os.makedirs(output_path, exist_ok=True)
+    
     ydl_opts = {
-        'extract_flat': True,  # Extract video URLs without downloading
-        'skip_download': True,  # Skip downloading videos
-        'quiet': True, 
+        'format': 'bestaudio/best',
+        'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
+        'progress_hooks': [progress_hook],
+        'verbose': False,
+        'quiet': True,
+        'no_warnings': True,
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '320',
+        }],
+    }
+    
+    try:
+        print(f"\nDownloading and converting audio...")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        print("\nAudio download and conversion complete!")
+        
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+        print("Please try again or check if the video is available.")
+
+def get_playlist_info(playlist_url):
+    """
+    Extract playlist information and video URLs
+    """
+    ydl_opts = {
+        'extract_flat': True,
+        'skip_download': True,
+        'quiet': True,
         'no_warnings': True
     }
     
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        playlist_info = ydl.extract_info(playlist_url, download=False)
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            playlist_info = ydl.extract_info(playlist_url, download=False)
         
-        # Extract video URLs from playlist entries
-        video_urls = []
-        if 'entries' in playlist_info:
-            for entry in playlist_info['entries']:
-                video_urls.append(entry['url'])
-    
-    return video_urls
-
-
-def get_playlist_info(playlist_url):
-    # Options to retrieve playlist information
-    ydl_opts = {
-        'extract_flat': True,   # Extract video URLs without downloading
-        'skip_download': True,  # Skip downloading videos
-        'quiet': True,          # Suppress terminal output
-        'no_warnings': True     # Suppress warnings
-    }
-    
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        playlist_info = ydl.extract_info(playlist_url, download=False)
-        
-        # Extract playlist name (title)
         playlist_name = playlist_info.get('title', 'Unknown_Playlist')
+        # Sanitize playlist name for folder creation
+        playlist_name = sanitize_filename(playlist_name)
         
-        # Extract video URLs from playlist entries
         video_urls = []
         if 'entries' in playlist_info:
             for entry in playlist_info['entries']:
-                video_urls.append(entry['url'])
+                if entry:  # Skip None entries
+                    video_urls.append(entry['url'])
+        
+        return playlist_name, video_urls
     
-    return playlist_name, video_urls
+    except Exception as e:
+        print(f"Error getting playlist info: {str(e)}")
+        return None, []
 
+def download_playlist_videos(playlist_url, quality=0):
+    """
+    Download all videos from a playlist
+    """
+    playlist_name, urls = get_playlist_info(playlist_url)
+    
+    if not urls:
+        print("No videos found in playlist or error occurred.")
+        return
+        
+    output_path = os.path.join("downloads", playlist_name)
+    print(f"\nPlaylist: {playlist_name}")
+    print(f"Found {len(urls)} videos")
+    print(f"Output path: {output_path}")
+    
+    successful_downloads = 0
+    failed_downloads = 0
+    
+    for i, video_url in enumerate(urls, 1):
+        print(f'\n{"="*50}')
+        print(f'Downloading video {i}/{len(urls)} from playlist: {playlist_name}')
+        print(f'{"="*50}')
+        
+        try:
+            download_video(video_url, output_path=output_path, quality=quality)
+            successful_downloads += 1
+        except Exception as e:
+            print(f"Failed to download video {i}: {str(e)}")
+            failed_downloads += 1
+            continue
+    
+    print(f'\n{"="*50}')
+    print(f'Playlist download complete!')
+    print(f'Successful: {successful_downloads}/{len(urls)}')
+    print(f'Failed: {failed_downloads}/{len(urls)}')
+    print(f'{"="*50}')
+
+def download_playlist_audios(playlist_url):
+    """
+    Download all audios from a playlist
+    """
+    playlist_name, urls = get_playlist_info(playlist_url)
+    
+    if not urls:
+        print("No videos found in playlist or error occurred.")
+        return
+        
+    output_path = os.path.join("downloads", playlist_name + "_audios")
+    print(f"\nPlaylist: {playlist_name}")
+    print(f"Found {len(urls)} videos")
+    print(f"Output path: {output_path}")
+    
+    successful_downloads = 0
+    failed_downloads = 0
+    
+    for i, video_url in enumerate(urls, 1):
+        print(f'\n{"="*50}')
+        print(f'Downloading audio {i}/{len(urls)} from playlist: {playlist_name}')
+        print(f'{"="*50}')
+        
+        try:
+            download_audio(video_url, output_path=output_path)
+            successful_downloads += 1
+        except Exception as e:
+            print(f"Failed to download audio {i}: {str(e)}")
+            failed_downloads += 1
+            continue
+    
+    print(f'\n{"="*50}')
+    print(f'Playlist audio download complete!')
+    print(f'Successful: {successful_downloads}/{len(urls)}')
+    print(f'Failed: {failed_downloads}/{len(urls)}')
+    print(f'{"="*50}')
 
 def clear_terminal():
-    # For Windows
+    """Clear terminal screen"""
     if os.name == 'nt':
         os.system('cls')
-    # For macOS and Linux (posix systems)
     else:
         os.system('clear')
 
-
-if __name__ == "__main__": 
-    choice = int(input("1.single video download\n2.whole playlist video download\n3.single audio download\n4.whole playlist audio download\nyourchoice :: "))
-    clear_terminal()
-    if choice == 1:
-        video_url = input("Enter the YouTube video URL: ")
-        download_video(video_url)
-        clear_terminal()
-        print("video downloaded!!")
-    elif choice == 2:
-        quality = int(input("quality of videos\n1.manual\n2.best\nchoice :: "))
-        playlist_url = input("Enter the YouTube playlist URL: ")
-
-        playlist_name, urls = get_playlist_info(playlist_url)
-        output_path = "downloads/" + playlist_name
-        clear_terminal()
-        counter = 1
-        
-        for i in urls:
-            print(f'{playlist_name} ({counter} / {len(urls)})')
-            if quality == 2:
-                download_video(i,output_path=output_path, quality=2)
+def main():
+    """Main function with improved user interface"""
+    print("YouTube Downloader (yt-dlp)")
+    print("=" * 30)
+    
+    while True:
+        try:
+            print("\nOptions:")
+            print("1. Single video download")
+            print("2. Whole playlist video download")
+            print("3. Single audio download")
+            print("4. Whole playlist audio download")
+            print("5. Exit")
+            
+            choice = input("\nYour choice (1-5): ").strip()
+            
+            if choice == '1':
+                video_url = input("Enter the YouTube video URL: ").strip()
+                if video_url:
+                    download_video(video_url)
+                    print("Video downloaded!")
+                else:
+                    print("Invalid URL.")
+                    
+            elif choice == '2':
+                quality_choice = input("\nQuality options:\n1. Manual selection for each video\n2. Best available quality\nChoice (1-2): ").strip()
+                
+                if quality_choice in ['1', '2']:
+                    playlist_url = input("Enter the YouTube playlist URL: ").strip()
+                    if playlist_url:
+                        quality = 2 if quality_choice == '2' else 0
+                        download_playlist_videos(playlist_url, quality)
+                    else:
+                        print("Invalid URL.")
+                else:
+                    print("Invalid choice.")
+                    
+            elif choice == '3':
+                video_url = input("Enter the YouTube video URL: ").strip()
+                if video_url:
+                    download_audio(video_url)
+                    print("Audio downloaded!")
+                else:
+                    print("Invalid URL.")
+                    
+            elif choice == '4':
+                playlist_url = input("Enter the YouTube playlist URL: ").strip()
+                if playlist_url:
+                    download_playlist_audios(playlist_url)
+                else:
+                    print("Invalid URL.")
+                    
+            elif choice == '5':
+                print("Goodbye!")
+                break
+                
             else:
-                download_video(i)
-            clear_terminal()
-            counter += 1
-    elif choice == 3:
-        video_url = input("Enter the YouTube video URL: ")
-        download_audio(video_url)
-    elif choice == 4:
-        playlist_url = input("Enter the YouTube playlist URL: ")
+                print("Invalid choice. Please select 1-5.")
+                
+        except KeyboardInterrupt:
+            print("\n\nOperation cancelled by user.")
+            break
+        except Exception as e:
+            print(f"An unexpected error occurred: {str(e)}")
 
-        playlist_name, urls = get_playlist_info(playlist_url)
-        output_path = "downloads/" + playlist_name
-        clear_terminal()
-        counter = 1
-        
-        for i in urls:
-            print(f'{playlist_name} ({counter} / {len(urls)})')
-            download_audio(i, output_path=output_path)
-            clear_terminal()
-            counter += 1
+if __name__ == "__main__":
+    main()
+

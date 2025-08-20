@@ -9,9 +9,9 @@ if torch.cuda.is_available():
 llm = HuggingFacePipeline.from_model_id(
     model_id='TinyLlama/TinyLlama-1.1B-Chat-v1.0',
     task='text-generation',
-    device=-1,  # Use CPU to avoid memory issues
+    device=0,  # Use CPU to avoid memory issues
     model_kwargs={
-        "torch_dtype": torch.float32,  # Use float32 for CPU
+        "torch_dtype": torch.float16,  # Use float32 for CPU
     },
     pipeline_kwargs={
         "temperature": 0.5,
@@ -27,5 +27,6 @@ model = ChatHuggingFace(
 )
 
 # Test the model
+print(torch.cuda.is_available())
 result = model.invoke("What is the capital of India?")
 print(result.content)
