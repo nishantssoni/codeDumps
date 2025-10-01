@@ -1,0 +1,35 @@
+
+**ANKI FLASHCARD CREATION PROMPT**
+
+Please convert the following paragraph into effective Anki flashcards. Follow these guidelines:
+
+**SUMMARIZATION REQUIREMENTS:**
+- First, provide a brief 2-3 sentence summary capturing the main concepts and context using simple english
+- Identify key facts, definitions, relationships, dates, names, and processes
+- Preserve important contextual connections between ideas
+
+**FLASHCARD CREATION RULES:**
+1. **One Knowledge Point Per Card** - Each flashcard must test only one specific concept, fact, or relationship
+2. **Atomic Cards** - Break complex information into simple, focused questions that can be answered in 8 seconds or less
+3. **Specific Questions** - Use clear, direct questions rather than vague statements or "explain" prompts[3]
+4. **Context Preservation** - Include enough context so cards make sense independently[5]
+
+**CARD TYPES TO CREATE:**
+- **Basic Q&A Cards**: For factual information, definitions, and direct relationships
+- **Cloze Deletion Cards**: For key terms within context, using `{{c1::term}}` format also add extra text
+- **Application Cards**: For testing understanding through scenarios or examples
+
+**FORMAT REQUIREMENTS:**
+- Label each card type clearly (Basic/Cloze)
+- For Cloze cards, use numbered deletions `{{c1::}}`, `{{c2::}}` for separate cards
+- Keep questions specific and answers concise
+- Include source context when helpful
+
+**QUALITY CHECKLIST:**
+- Each card tests one distinct piece of knowledge
+- Questions are specific enough to have one clear answer
+- Cards build understanding, not just recognition
+- Information is broken down to atomic level
+
+
+here is the paragraph:
