@@ -1,19 +1,43 @@
-from openai import OpenAI
-# load env
-from dotenv import load_dotenv
-load_dotenv()
+import requests
+import json
 
-client = OpenAI(
-  base_url="https://openrouter.ai/api/v1",
+# First API call with reasoning
+response = requests.post(
+  url="https://openrouter.ai/api/v1/chat/completions",
+
+  data=json.dumps({
+    "model": "google/gemma-4-26b-a4b-it:free",
+    "messages": [
+        {
+          "role": "user",
+          "content": "How many r's are in the word 'strawberry'?"
+        }
+      ],
+    "reasoning": {"enabled": True}
+  })
 )
 
-completion = client.chat.completions.create(
-  model="openai/o4-mini",
-  messages=[
-    {
-      "role": "user",
-      "content": "What is the capital of france?"
-    }
-  ]
+# Extract the assistant message with reasoning_details
+response = response.json()
+response = response['choices'][0]['message']
+
+# Preserve the assistant message with reasoning_details
+messages = [
+  {"role": "user", "content": "How many r's are in the word 'strawberry'?"},
+  {
+    "role": "assistant",
+    "content": response.get('content'),
+    "reasoning_details": response.get('reasoning_details')  # Pass back unmodified
+  },
+  {"role": "user", "content": "Are you sure? Think carefully."}
+]
+
+# Second API call - model continues reasoning from where it left off
+response2 = requests.post(
+  url="https://openrouter.ai/api/v1/chat/completions",
+  data=json.dumps({
+    "model": "google/gemma-4-26b-a4b-it:free",
+    "messages": messages,  # Includes preserved reasoning_details
+    "reasoning": {"enabled": True}
+  })
 )
-print(completion.choices[0].message.content)
